@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>厨房助手 · 私人厨师</title>
+    <style>
+        :root {
+            --bg: #f7f6f2;
+            --panel: #ffffff;
+            --text: #2b2b2b;
+            --muted: #8a8a8a;
+            --accent: #e8590c;
+            --accent-soft: #fff4e6;
+            --border: #e8e6e0;
+            --bubble-user: #e8590c;
+            --bubble-ai: #f0efeb;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header .logo {
+            width: 40px; height: 40px;
+            background: var(--accent);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+        }
+        header h1 { font-size: 18px; font-weight: 600; }
+        header p { font-size: 12px; color: var(--muted); }
+
+        #chat {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .msg { display: flex; gap: 10px; max-width: 80%; }
+        .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+        .msg.ai { align-self: flex-start; }
+
+        .avatar {
+            width: 34px; height: 34px; border-radius: 50%;
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+        .msg.user .avatar { background: var(--accent); }
+        .msg.ai .avatar { background: #e9ecef; }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 14px;
+            line-height: 1.6;
+            font-size: 15px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .msg.user .bubble { background: var(--bubble-user); color: #fff; border-bottom-right-radius: 4px; }
+        .msg.ai .bubble { background: var(--bubble-ai); border-bottom-left-radius: 4px; }
+
+        .msg img.preview {
+            max-width: 220px;
+            max-height: 180px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .typing { display: inline-block; animation: blink 1s infinite; color: var(--muted); }
+        @keyframes blink { 50% { opacity: 0.2; } }
+
+        footer {
+            background: var(--panel);
+            border-top: 1px solid var(--border);
+            padding: 16px 24px;
+        }
+        .input-wrap {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            max-width: 860px;
+            margin: 0 auto;
+        }
+        #image-btn {
+            width: 42px; height: 42px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        #image-btn:hover { background: var(--accent-soft); }
+        #input {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            min-height: 42px;
+            max-height: 160px;
+        }
+        #input:focus { border-color: var(--accent); }
+        #send-btn {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 0 20px;
+            height: 42px;
+            font-size: 15px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #image-hint {
+            max-width: 860px; margin: 8px auto 0;
+            font-size: 12px; color: var(--muted);
+            min-height: 16px;
+        }
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">👨‍🍳</div>
+        <div>
+            <h1>厨房助手</h1>
+            <p>拍张食材照片，或直接告诉我你有什么，我帮你推荐菜谱</p>
+        </div>
+    </header>
+
+    <div id="chat"></div>
+
+    <footer>
+        <div class="input-wrap">
+            <button id="image-btn" title="上传食材照片">📷</button>
+            <textarea id="input" rows="1" placeholder="例如：我有番茄、鸡蛋、土豆…"></textarea>
+            <button id="send-btn">发送</button>
+            <input type="file" id="file-input" accept="image/*">
+        </div>
+        <div id="image-hint"></div>
+    </footer>
+
+    <script>
+        // 后端接口地址：默认同源，若前后端分离部署请改成实际地址
+        const API_BASE = "";
+        // 当前待发送的图片（base64）
+        let pendingImage = null;
+        // 对话线程 ID，保持多轮上下文
+        let threadId = "user-" + Date.now();
+
+        const chatBox = document.getElementById("chat");
+        const input = document.getElementById("input");
+        const sendBtn = document.getElementById("send-btn");
+        const imageBtn = document.getElementById("image-btn");
+        const fileInput = document.getElementById("file-input");
+        const imageHint = document.getElementById("image-hint");
+
+        // 自动调整输入框高度
+        input.addEventListener("input", () => {
+            input.style.height = "auto";
+            input.style.height = Math.min(input.scrollHeight, 160) + "px";
+        });
+
+        // 回车发送，Shift+回车换行
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+            }
+        });
+
+        sendBtn.addEventListener("click", send);
+        imageBtn.addEventListener("click", () => fileInput.click());
+
+        // 选择图片后转成 base64 暂存
+        fileInput.addEventListener("change", () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                pendingImage = reader.result; // data:image/...;base64,xxx
+                imageHint.textContent = "已选择图片：" + file.name + "（发送时将一并提交）";
+            };
+            reader.readAsDataURL(file);
+            fileInput.value = "";
+        });
+
+        // 在聊天区添加一条消息
+        function addMessage(role, text, imageUrl) {
+            const wrap = document.createElement("div");
+            wrap.className = "msg " + role;
+
+            const avatar = document.createElement("div");
+            avatar.className = "avatar";
+            avatar.textContent = role === "user" ? "🙂" : "👨‍🍳";
+            wrap.appendChild(avatar);
+
+            const bubble = document.createElement("div");
+            bubble.className = "bubble";
+
+            if (imageUrl) {
+                const img = document.createElement("img");
+                img.className = "preview";
+                img.src = imageUrl;
+                bubble.appendChild(img);
+            }
+            bubble.appendChild(document.createTextNode(text));
+            wrap.appendChild(bubble);
+
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return bubble;
+        }
+
+        async function send() {
+            const text = input.value.trim();
+            if (!text && !pendingImage) return;
+            if (sendBtn.disabled) return;
+
+            // 显示用户消息
+            const imageToSend = pendingImage;
+            addMessage("user", text || "（图片）", imageToSend);
+            input.value = "";
+            input.style.height = "auto";
+            pendingImage = null;
+            imageHint.textContent = "";
+
+            // 显示 AI 占位气泡，准备流式填充
+            const aiBubble = addMessage("ai", "");
+            const typingSpan = document.createElement("span");
+            typingSpan.className = "typing";
+            typingSpan.textContent = "正在为你准备菜谱…";
+            aiBubble.appendChild(typingSpan);
+
+            sendBtn.disabled = true;
+
+            try {
+                const resp = await fetch(API_BASE + "/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: text || "帮我看看能做什么菜？",
+                        image_base64: imageToSend,
+                        thread_id: threadId,
+                    }),
+                });
+
+                if (!resp.ok) {
+                    throw new Error("接口返回错误：" + resp.status);
+                }
+
+                // 移除“思考中”占位
+                typingSpan.remove();
+
+                // 读取 SSE 流
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let firstText = false; // 是否已收到第一段文本（用于清理占位提示）
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // SSE 数据以 \n\n 分隔
+                    const parts = buffer.split("\n\n");
+                    buffer = parts.pop(); // 保留未完整的一截
+
+                    for (const part of parts) {
+                        const line = part.trim();
+                        if (!line.startsWith("data:")) continue;
+                        const payload = line.slice(5).trim();
+                        if (payload === "[DONE]") continue;
+                        try {
+                            const data = JSON.parse(payload);
+                            if (data.error) {
+                                typingSpan.remove();
+                                aiBubble.textContent += "\n[错误] " + data.error;
+                            } else if (data.status) {
+                                // 阶段提示：如"正在联网搜索菜谱…"
+                                typingSpan.textContent = data.status;
+                            } else if (data.text) {
+                                // 收到正式文本时，移除占位提示
+                                if (!firstText) {
+                                    typingSpan.remove();
+                                    firstText = true;
+                                }
+                                aiBubble.textContent += data.text;
+                            }
+                        } catch (_) { /* 忽略无法解析的片段 */ }
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                }
+            } catch (err) {
+                typingSpan.remove();
+                aiBubble.textContent = "请求失败：" + err.message;
+            } finally {
+                sendBtn.disabled = false;
+                input.focus();
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        }
+
+        // 初始欢迎语
+        addMessage("ai", "你好！我是你的私人厨师。拍张食材照片，或者直接告诉我你有什么食材，我来帮你推荐今天做什么菜。");
+    </script>
+</body>
+</html>

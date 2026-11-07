@@ -1,0 +1,28 @@
+[project]
+name = "kitchen-assistant"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "ipywidgets>=8.1.9",
+    "langchain>=1.4.2",
+    "langchain-openai>=1.6.0",
+    "langchain-tavily>=0.2.18",
+    "langgraph-checkpoint-sqlite>=3.1.1",
+    "notebook>=7.6.3",
+    "openai>=3.17.0",
+    "python-dotenv>=1.2.3",
+    "uvicorn>=0.32.0",
+]
+
+[project.scripts]
+kitchen-assistant = "kitchen_assistant:main"
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
